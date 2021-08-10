@@ -60,6 +60,8 @@ ifneq ($(CRT0_LIBS),)
   GNUEFI_LIBS  += gnuefi
 endif
 
+TARGET_NAME_linux_efi = linux$(ARCH)
+
 CC = gcc
 LD = ld
 OC = objcopy
@@ -101,7 +103,7 @@ MAKEFLAGS += --no-builtin-rules
  
 # default target
 PHONY = all
-all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a linux.efi
+all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a $(TARGET_NAME_linux_efi).efi
 
 $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a:
 	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(GNUEFI_ARCH) $(GNUEFI_LIBS)
@@ -114,17 +116,16 @@ version.h:
 %.o: %.c version.h
 	${CC} ${CFLAGS} $< -o $@
  
-linux.so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} 
+$(TARGET_NAME_linux_efi).so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} 
 	${LD} $^ ${LDFLAGS} --output=$@
 
-linux.efi: linux.so
+$(TARGET_NAME_linux_efi).efi: $(TARGET_NAME_linux_efi).so
 	${OC} ${OCFLAGS} $< $@
  
  
 PHONY += clean
 clean:
-	rm --force ${patsubst %.c,%.o,${SOURCES_linux_efi}} ${NAME}.so ${NAME}.efi
- 
+	rm --force ${patsubst %.c,%.o,${SOURCES_linux_efi}} ${TARGET_NAME_linux_efi}.so {TARGET_NAME_linux_efi}.efi 
  
 .PHONY: ${PHONY}
 
