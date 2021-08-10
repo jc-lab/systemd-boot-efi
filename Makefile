@@ -8,6 +8,8 @@ SUBSYSTEM       = 10
 SOURCES_common = disk.c graphics.c measure.c pe.c secure-boot.c util.c fundamental/string-util-fundamental.c
 SOURCES_linux_efi = linux.c splash.c stub.c $(SOURCES_common)
 
+GIT_VERSION = $(shell git describe --tags || git rev-parse HEAD)
+
 ifeq ($(shell uname -m),x86_64)
   ARCH        = x64
 else ifeq ($(shell uname -m),arm)
@@ -103,9 +105,13 @@ all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a linux.efi
 
 $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a:
 	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(GNUEFI_ARCH) $(GNUEFI_LIBS)
+
+version.h:
+	sed -e "s/@GIT_VERSION@/${GIT_VERSION}/g;s/@EFI_MACHINE_TYPE_NAME@/${ARCH}/g" version.h.in > version.h
+	cat version.h
  
 # object files
-%.o: %.c
+%.o: %.c version.h
 	${CC} ${CFLAGS} $< -o $@
  
 linux.so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} 

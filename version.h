@@ -1,2 +1,0 @@
-#define GIT_VERSION "GBB"
-#define EFI_MACHINE_TYPE_NAME "x64" 
