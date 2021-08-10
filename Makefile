@@ -1,132 +1,87 @@
-ARCH            = x64
-# You can alter the subsystem according to your EFI binary target:
-# 10 = EFI application
-# 11 = EFI boot service driver
-# 12 = EFI runtime driver
-SUBSYSTEM       = 10
+GNUEFI_DIR = $(CURDIR)/gnu-efi
+
+include Makefile.defaults
 
 SOURCES_common = disk.c graphics.c measure.c pe.c secure-boot.c util.c fundamental/string-util-fundamental.c
 SOURCES_linux_efi = linux.c splash.c stub.c $(SOURCES_common)
 
 GIT_VERSION = $(shell git describe --tags || git rev-parse HEAD)
 
-ifeq ($(shell uname -m),x86_64)
-  ARCH        = x64
-else ifeq ($(shell uname -m),arm)
-  ARCH        = arm
-else ifeq ($(shell uname -m),aarch64)
-  ARCH        = aa64
-else
-  ARCH        = ia32
+TARGET_NAME_linux_efi = linux$(EFI_ARCH)
+
+CRTOBJS		= $(GNUEFI_DIR)/$(ARCH)/gnuefi/crt0-efi-$(ARCH).o
+LDSCRIPT	= $(GNUEFI_DIR)/gnuefi/elf_$(ARCH)_efi.lds
+ifneq (,$(findstring FreeBSD,$(OS)))
+LDSCRIPT	= $(GNUEFI_DIR)/gnuefi/elf_$(ARCH)_fbsd_efi.lds
 endif
 
-ifeq ($(ARCH),x64)
-  GNUEFI_ARCH   = x86_64
-  GCC_ARCH      = x86_64
-  QEMU_ARCH     = x86_64
-  CFLAGS        = -m64 -mno-red-zone -mno-sse -mno-mmx -DEFI_FUNCTION_WRAPPER -DGNU_EFI_USE_MS_ABI 
-  LDFLAGS       = 
-else ifeq ($(ARCH),ia32)
-  GNUEFI_ARCH   = ia32
-  GCC_ARCH      = i686
-  QEMU_ARCH     = i386
-  CFLAGS        = -m32 -mno-red-zone -mno-sse -mno-mmx
-  LDFLAGS       = 
-else ifeq ($(ARCH),arm)
-  GNUEFI_ARCH   = arm
-  GCC_ARCH      = arm
-  QEMU_ARCH     = arm
-  CFLAGS        = -marm -mfpu=none -fpic -fshort-wchar
-  LDFLAGS       = -Wl,--no-wchar-size-warning -Wl,--defsym=EFI_SUBSYSTEM=$(SUBSYSTEM)
-  CRT0_LIBS     = -lgnuefi
-else ifeq ($(ARCH),aa64)
-  GNUEFI_ARCH   = aarch64
-  GCC_ARCH      = aarch64
-  QEMU_ARCH     = aarch64
-  FW_BASE       = QEMU_EFI
-  EP_PREFIX     =
-  CFLAGS        = -mfpu=none -fpic -fshort-wchar
-  LDFLAGS       = -Wl,--no-wchar-size-warning -Wl,--defsym=EFI_SUBSYSTEM=$(SUBSYSTEM)
-  CRT0_LIBS     = -lgnuefi
-endif
+#CFLAGS += -c                          \
+#	  -fno-stack-protector        \
+#	  -fpic                       \
+#	  -fshort-wchar               \
+#	  -DSD_BOOT \
+#	  -Ifundamental \
+#	  -include version.h \
+#	  -mno-red-zone               \
+#	  -pedantic                   \
+#	  -nostdlib \
+#	  -std=gnu99                    \
+#	  -Wall                       \
+#	  -Wextra
 
-GNUEFI_DIR      = $(CURDIR)/gnu-efi
-GNUEFI_LIBS     = lib
+CFLAGS += -DENABLE_TPM -DSD_TPM_PCR=8 -std=gnu99
+INCDIR += -DSD_BOOT -I$(CURDIR)/fundamental -include version.h
 
-# If the compiler produces an elf binary, we need to fiddle with a PE crt0
-ifneq ($(CRT0_LIBS),)
-  CRT0_DIR      = $(GNUEFI_DIR)/$(GNUEFI_ARCH)/gnuefi
-  LDFLAGS      += -L$(CRT0_DIR) -T $(GNUEFI_DIR)/gnuefi/elf_$(GNUEFI_ARCH)_efi.lds $(CRT0_DIR)/crt0-efi-$(GNUEFI_ARCH).o
-  GNUEFI_LIBS  += gnuefi
-endif
-
-TARGET_NAME_linux_efi = linux$(ARCH)
-TARGET_FILE_linux_efi = $(TARGET_NAME_linux_efi).efi.stub
-
-CC = gcc
-LD = ld
-OC = objcopy
-
-CFLAGS += -c                          \
-	  -fno-stack-protector        \
-	  -fpic                       \
-	  -fshort-wchar               \
-	  -DSD_BOOT \
-	  -I$(GNUEFI_DIR)/inc -I$(GNUEFI_DIR)/inc/$(GNUEFI_ARCH) -I$(GNUEFI_DIR)/inc/protocol \
-	  -Ifundamental \
-	  -include version.h \
-	  -mno-red-zone               \
-	  -pedantic                   \
-	  -nostdlib \
-	  -std=gnu99                    \
-	  -Wall                       \
-	  -Wextra
-
-LDFLAGS += $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a \
-	   -Bshareable                          \
-	   -Bsymbolic                           \
-	   -nostdlib                            \
-	   -z nocombreloc
-
-OCFLAGS = -j .text    \
-	  -j .sdata   \
-	  -j .sbat    \
-	  -j .data    \
-	  -j .dynamic \
-	  -j .dynsym  \
-	  -j .rel*    \
-	  --target=efi-app-$(GNUEFI_ARCH)
-
+LDFLAGS += -shared -Bsymbolic -znocombreloc -L$(GNUEFI_DIR)/$(ARCH)/lib -L$(GNUEFI_DIR)/$(ARCH)/gnuefi $(CRTOBJS)
 
 # disable built-in implicit rules
 MAKEFLAGS += --no-builtin-rules
- 
+
+LOADLIBES += -lefi -lgnuefi
+LOADLIBES += $(LIBGCC)
+LOADLIBES += -T$(LDSCRIPT)
+
+FORMAT := --target efi-app-$(ARCH)
  
 # default target
 PHONY = all
-all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a $(TARGET_FILE_linux_efi)
+all: $(TARGET_NAME_linux_efi).efi.stub
 
-$(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a:
-	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(GNUEFI_ARCH) $(GNUEFI_LIBS)
+$(GNUEFI_DIR)/$(ARCH)/lib/libefi.a:
+	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(ARCH) lib
+
+$(GNUEFI_DIR)/$(ARCH)/gnuefi/libgnuefi.a:
+	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(ARCH) gnuefi
 
 version.h:
 	sed -e "s/@GIT_VERSION@/${GIT_VERSION}/g;s/@EFI_MACHINE_TYPE_NAME@/${ARCH}/g" version.h.in > version.h
 	cat version.h
  
-# object files
-%.o: %.c version.h
-	${CC} ${CFLAGS} $< -o $@
- 
-$(TARGET_NAME_linux_efi).so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} 
-	${LD} $^ ${LDFLAGS} --output=$@
+%.efi: %.so
+	$(OBJCOPY) -j .text -j .sdata -j .sbat -j .data -j .dynamic -j .dynsym -j ".rel*" \
+		   $(FORMAT) $*.so $@
 
-$(TARGET_FILE_linux_efi): $(TARGET_NAME_linux_efi).so
-	${OC} ${OCFLAGS} $< $@
- 
+%.efi.debug: %.so
+	$(OBJCOPY) -j .debug_info -j .debug_abbrev -j .debug_aranges \
+		-j .debug_line -j .debug_str -j .debug_ranges \
+		-j .note.gnu.build-id \
+		$(FORMAT) $*.so $@
+
+#%.so: %.o
+#	$(LD) $(LDFLAGS) $^ -o $@ $(LOADLIBES)
+
+%.o: %.c version.h
+	$(CC) $(INCDIR) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(TARGET_NAME_linux_efi).so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} $(GNUEFI_DIR)/$(ARCH)/lib/libefi.a $(GNUEFI_DIR)/$(ARCH)/gnuefi/libgnuefi.a
+	$(LD) $(LDFLAGS) $^ -o $@ $(LOADLIBES)
+
+$(TARGET_NAME_linux_efi).efi.stub: $(TARGET_NAME_linux_efi).efi
+	cp $(TARGET_NAME_linux_efi).efi $(TARGET_NAME_linux_efi).efi.stub
  
 PHONY += clean
 clean:
-	rm --force ${patsubst %.c,%.o,${SOURCES_linux_efi}} ${TARGET_NAME_linux_efi}.so {TARGET_NAME_linux_efi}.efi 
+	rm --force ${patsubst %.c,%.o,${SOURCES_linux_efi}} ${TARGET_NAME_linux_efi}.so ${TARGET_NAME_linux_efi}.efi
  
 .PHONY: ${PHONY}
 
