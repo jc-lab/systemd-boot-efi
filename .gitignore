@@ -1,5 +1,6 @@
 *.o
 *.so
 *.efi
+*.efi.stub
 version.h
 

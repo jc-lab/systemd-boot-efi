@@ -10,8 +10,8 @@ ADD [".", "/work/src"]
 RUN cd /work/src && \
     git submodule update --init && \
     make && \
-    sha256sum *.o *.so *.efi
+    sha256sum *.o *.so *.efi*
 
 FROM scratch
-COPY --from=builder ["/work/src/linux*.efi", "/"]
+COPY --from=builder ["/work/src/linux*.efi.stub", "/"]
 

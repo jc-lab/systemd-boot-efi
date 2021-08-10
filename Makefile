@@ -61,6 +61,7 @@ ifneq ($(CRT0_LIBS),)
 endif
 
 TARGET_NAME_linux_efi = linux$(ARCH)
+TARGET_FILE_linux_efi = $(TARGET_NAME_linux_efi).efi.stub
 
 CC = gcc
 LD = ld
@@ -103,7 +104,7 @@ MAKEFLAGS += --no-builtin-rules
  
 # default target
 PHONY = all
-all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a $(TARGET_NAME_linux_efi).efi
+all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a $(TARGET_FILE_linux_efi)
 
 $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a:
 	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(GNUEFI_ARCH) $(GNUEFI_LIBS)
@@ -119,7 +120,7 @@ version.h:
 $(TARGET_NAME_linux_efi).so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} 
 	${LD} $^ ${LDFLAGS} --output=$@
 
-$(TARGET_NAME_linux_efi).efi: $(TARGET_NAME_linux_efi).so
+$(TARGET_FILE_linux_efi): $(TARGET_NAME_linux_efi).so
 	${OC} ${OCFLAGS} $< $@
  
  

@@ -22,7 +22,7 @@ jobs:
       - name: Unpack image
         run: |
           cd build && tar -xf image.tar
-          sha256sum linux*.efi
+          sha256sum *
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -30,4 +30,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: |
-            build/linux*.efi
+            build/linux*.efi.stub
