@@ -5,76 +5,49 @@ ARCH            = x64
 # 12 = EFI runtime driver
 SUBSYSTEM       = 10
 
-# Try to auto-detect the target ARCH
-ifeq ($(shell uname -o),Msys)
-  IS_MINGW32    = $(findstring MINGW32,$(shell uname -s))
-  IS_MINGW64    = $(findstring MINGW64,$(shell uname -s))
-  ifeq ($(IS_MINGW32),MINGW32)
-    ARCH        = ia32
-  endif
-  ifeq ($(IS_MINGW64),MINGW64)
-    ARCH        = x64
-  endif
-else
-  ifeq ($(shell uname -m),x86_64)
-    ARCH        = x64
-  else ifeq ($(shell uname -m),arm)
-    ARCH        = arm
-    CROSS_COMPILE =
-  else ifeq ($(shell uname -m),aarch64)
-    ARCH        = aa64
-    CROSS_COMPILE =
-  else
-    ARCH        = ia32
-  endif
-endif
+SOURCES_common = disk.c graphics.c measure.c pe.c secure-boot.c util.c fundamental/string-util-fundamental.c
+SOURCES_linux_efi = linux.c splash.c stub.c $(SOURCES_common)
 
-# Auto-detect the host arch for MinGW
 ifeq ($(shell uname -m),x86_64)
-  MINGW_HOST    = w64
+  ARCH        = x64
+else ifeq ($(shell uname -m),arm)
+  ARCH        = arm
+else ifeq ($(shell uname -m),aarch64)
+  ARCH        = aa64
 else
-  MINGW_HOST    = w32
+  ARCH        = ia32
 endif
 
 ifeq ($(ARCH),x64)
   GNUEFI_ARCH   = x86_64
   GCC_ARCH      = x86_64
   QEMU_ARCH     = x86_64
-  FW_BASE       = OVMF
-  EP_PREFIX     =
-  CFLAGS        = -m64 -mno-red-zone
+  CFLAGS        = -m64 -mno-red-zone -mno-sse -mno-mmx -DEFI_FUNCTION_WRAPPER -DGNU_EFI_USE_MS_ABI 
   LDFLAGS       = 
 else ifeq ($(ARCH),ia32)
   GNUEFI_ARCH   = ia32
   GCC_ARCH      = i686
   QEMU_ARCH     = i386
-  FW_BASE       = OVMF
-  EP_PREFIX     = _
-  CFLAGS        = -m32 -mno-red-zone
+  CFLAGS        = -m32 -mno-red-zone -mno-sse -mno-mmx
   LDFLAGS       = 
 else ifeq ($(ARCH),arm)
   GNUEFI_ARCH   = arm
   GCC_ARCH      = arm
   QEMU_ARCH     = arm
-  FW_BASE       = QEMU_EFI
-  EP_PREFIX     =
-  CFLAGS        = -marm -fpic -fshort-wchar
+  CFLAGS        = -marm -mfpu=none -fpic -fshort-wchar
   LDFLAGS       = -Wl,--no-wchar-size-warning -Wl,--defsym=EFI_SUBSYSTEM=$(SUBSYSTEM)
   CRT0_LIBS     = -lgnuefi
-  QEMU_OPTS     = -M virt -cpu cortex-a15
 else ifeq ($(ARCH),aa64)
   GNUEFI_ARCH   = aarch64
   GCC_ARCH      = aarch64
   QEMU_ARCH     = aarch64
   FW_BASE       = QEMU_EFI
   EP_PREFIX     =
-  CFLAGS        = -fpic -fshort-wchar
+  CFLAGS        = -mfpu=none -fpic -fshort-wchar
   LDFLAGS       = -Wl,--no-wchar-size-warning -Wl,--defsym=EFI_SUBSYSTEM=$(SUBSYSTEM)
   CRT0_LIBS     = -lgnuefi
-  QEMU_OPTS     = -M virt -cpu cortex-a57
 endif
-FW_ARCH         = $(shell echo $(ARCH) | tr a-z A-Z)
-FW_ZIP          = $(FW_BASE)-$(FW_ARCH).zip
+
 GNUEFI_DIR      = $(CURDIR)/gnu-efi
 GNUEFI_LIBS     = lib
 
@@ -85,82 +58,67 @@ ifneq ($(CRT0_LIBS),)
   GNUEFI_LIBS  += gnuefi
 endif
 
-# SYSTEMROOT is only defined on Windows systems
-ifneq ($(SYSTEMROOT),)
-  QEMU          = "/c/Program Files/qemu/qemu-system-$(QEMU_ARCH)w.exe"
-  # MinGW on Windows doesn't use (tuple)-ar but (tuple)-gcc-ar
-  # so we remove the cross compiler tuple altogether
-else
-  QEMU          = qemu-system-$(QEMU_ARCH) -nographic
-endif
+CC = gcc
+LD = ld
+OC = objcopy
 
-CC             := gcc
-OBJCOPY        := objcopy
-CFLAGS         += -fno-stack-protector -Wshadow -Wall -Wunused -Werror-implicit-function-declaration
-CFLAGS         += -I$(GNUEFI_DIR)/inc -I$(GNUEFI_DIR)/inc/$(GNUEFI_ARCH) -I$(GNUEFI_DIR)/inc/protocol
-CFLAGS         += -DCONFIG_$(GNUEFI_ARCH) -D__MAKEWITH_GNUEFI -DGNU_EFI_USE_MS_ABI
-LDFLAGS        += -L$(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib -e $(EP_PREFIX)efi_main
-LDFLAGS        += -s -Wl,-Bsymbolic -nostdlib -shared
-LIBS            = -lefi $(CRT0_LIBS)
+CFLAGS += -c                          \
+	  -fno-stack-protector        \
+	  -fpic                       \
+	  -fshort-wchar               \
+	  -DSD_BOOT \
+	  -I$(GNUEFI_DIR)/inc -I$(GNUEFI_DIR)/inc/$(GNUEFI_ARCH) -I$(GNUEFI_DIR)/inc/protocol \
+	  -Ifundamental \
+	  -include version.h \
+	  -mno-red-zone               \
+	  -pedantic                   \
+	  -nostdlib \
+	  -std=gnu99                    \
+	  -Wall                       \
+	  -Wextra
 
-ifeq (, $(shell which $(CC)))
-  $(error The selected compiler ($(CC)) was not found)
-endif
+LDFLAGS += $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a \
+	   -Bshareable                          \
+	   -Bsymbolic                           \
+	   -nostdlib                            \
+	   -z nocombreloc
 
-GCCVERSION     := $(shell $(CC) -dumpversion | cut -f1 -d.)
-GCCMINOR       := $(shell $(CC) -dumpversion | cut -f2 -d.)
-GCCMACHINE     := $(shell $(CC) -dumpmachine)
-GCCNEWENOUGH   := $(shell ( [ $(GCCVERSION) -gt "4" ]        \
-                          || ( [ $(GCCVERSION) -eq "4" ]     \
-                              && [ $(GCCMINOR) -ge "7" ] ) ) \
-                        && echo 1)
-ifneq ($(GCCNEWENOUGH),1)
-  $(error You need GCC 4.7 or later)
-endif
+OCFLAGS = -j .text    \
+	  -j .sdata   \
+	  -j .sbat    \
+	  -j .data    \
+	  -j .dynamic \
+	  -j .dynsym  \
+	  -j .rel*    \
+	  --target=efi-app-$(GNUEFI_ARCH)
 
-ifneq ($(GCC_ARCH),$(findstring $(GCC_ARCH), $(GCCMACHINE)))
-  $(error The selected compiler ($(CC)) is not set for $(ARCH))
-endif
 
-.PHONY: all clean superclean
-all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a main.efi
+# disable built-in implicit rules
+MAKEFLAGS += --no-builtin-rules
+ 
+ 
+# default target
+PHONY = all
+all: $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a linux.efi
 
 $(GNUEFI_DIR)/$(GNUEFI_ARCH)/lib/libefi.a:
-	$(MAKE) -C$(GNUEFI_DIR) CROSS_COMPILE= ARCH=$(GNUEFI_ARCH) $(GNUEFI_LIBS)
-
-%.efi: %.o
-	@echo  [LD]  $(notdir $@)
-ifeq ($(CRT0_LIBS),)
-	@$(CC) $(LDFLAGS) $< -o $@ $(LIBS)
-else
-	@$(CC) $(LDFLAGS) $< -o $*.elf $(LIBS)
-	@$(OBJCOPY) -j .text -j .sdata -j .data -j .dynamic -j .dynsym -j .rel* \
-	            -j .rela* -j .reloc -j .eh_frame -O binary $*.elf $@
-	@rm -f $*.elf
-endif
-
+	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(GNUEFI_ARCH) $(GNUEFI_LIBS)
+ 
+# object files
 %.o: %.c
-	@echo  [CC]  $(notdir $@)
-	@$(CC) $(CFLAGS) -ffreestanding -c $<
+	${CC} ${CFLAGS} $< -o $@
+ 
+linux.so: ${patsubst %.c,%.o,${SOURCES_linux_efi}} 
+	${LD} $^ ${LDFLAGS} --output=$@
 
-qemu: CFLAGS += -D_DEBUG
-qemu: all $(FW_BASE)_$(FW_ARCH).fd image/efi/boot/boot$(ARCH).efi
-	$(QEMU) $(QEMU_OPTS) -bios ./$(FW_BASE)_$(FW_ARCH).fd -net none -hda fat:rw:image
-
-image/efi/boot/boot$(ARCH).efi: main.efi
-	mkdir -p image/efi/boot
-	cp -f $< $@
-
-$(FW_BASE)_$(FW_ARCH).fd:
-	wget https://efi.akeo.ie/$(FW_BASE)/$(FW_ZIP)
-	unzip $(FW_ZIP) $(FW_BASE).fd
-	mv $(FW_BASE).fd $(FW_BASE)_$(FW_ARCH).fd
-	rm $(FW_ZIP)
-
+linux.efi: linux.so
+	${OC} ${OCFLAGS} $< $@
+ 
+ 
+PHONY += clean
 clean:
-	rm -f main.efi *.o
-	rm -rf image
+	rm --force ${patsubst %.c,%.o,${SOURCES_linux_efi}} ${NAME}.so ${NAME}.efi
+ 
+ 
+.PHONY: ${PHONY}
 
-superclean: clean
-	$(MAKE) -C$(GNUEFI_DIR) ARCH=$(GNUEFI_ARCH) clean
-	rm -f *.fd
