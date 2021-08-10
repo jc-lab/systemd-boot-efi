@@ -1,2 +1,14 @@
 #define GIT_VERSION "@GIT_VERSION@"
-#define EFI_MACHINE_TYPE_NAME "@EFI_MACHINE_TYPE_NAME@" 
+#define EFI_MACHINE_TYPE_NAME "@EFI_MACHINE_TYPE_NAME@"
+
+#define PROJECT_VERSION "v239"
+#define PROJECT_URL "https://github.com/systemd/systemd"
+
+#define SBAT_PROJECT "systemd"
+#define SBAT_DISTRO "jclab-systemd-boot"
+#define SBAT_DISTRO_GENERATION 1
+#define SBAT_DISTRO_SUMMARY "jclab-systemd-boot"
+#define SBAT_DISTRO_PKGNAME "jclab-systemd-boot"
+#define SBAT_DISTRO_VERSION "@GIT_VERSION@"
+#define SBAT_DISTRO_URL "https://github.com/jclab-joseph/systemd-boot-efi"
+
